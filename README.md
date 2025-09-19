@@ -12,7 +12,6 @@
 - **Crisis guardrails**: Indian helplines shown only on high-risk cues  
 - **Quick Hide** screen, **session recap** download
 
-## 🧱 Structure
 ## 📁 Structure
 
 ~~~
