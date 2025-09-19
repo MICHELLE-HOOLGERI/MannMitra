@@ -97,7 +97,7 @@ WHO5       = load_json("content/who5.json")
 EXERCISES  = load_json("content/exercises.json")
 HELPLINES  = load_json("content/helplines_in.json")
 
-# ---------- extra exercises (no file edits needed) ----------
+# ---------- extra exercises  ----------
 MORE_EXERCISES = {
     "box_breath": {
         "title": "Box Breathing",
@@ -120,7 +120,7 @@ MORE_EXERCISES = {
     }
 }
 
-# ---------- Gemini (optional) ----------
+# ---------- Gemini  ----------
 api_key = os.getenv("GEMINI_API_KEY")
 client = None
 if api_key:
