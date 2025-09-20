@@ -47,11 +47,9 @@ h1,h2,h3,h4{ margin-top:.6rem !important; line-height:1.25; font-family: ui-sans
 /* metrics */
 [data-testid="stMetricValue"]{font-weight:800;}
 
-/* CHAT: black bubble with white text, only in chat */
-.stChatMessage{
-  background:#0b1220 !important; border-radius:16px; border:1px solid rgba(255,255,255,.08);
-}
-.stChatMessage, .stChatMessage * { color:#ffffff !important; }
+/* chat bubbles = black with white text */
+.stChatMessage{ background:#0b1220 !important; border-radius:16px; }
+.stChatMessage, .stChatMessage * { color:#f8fafc !important; }
 
 /* scrollable chat area */
 .chat-scroll{ max-height: 60vh; overflow-y: auto; padding-right: 8px; }
@@ -97,7 +95,7 @@ WHO5       = load_json("content/who5.json")
 EXERCISES  = load_json("content/exercises.json")
 HELPLINES  = load_json("content/helplines_in.json")
 
-# ---------- extra exercises  ----------
+# ---------- extra exercises (no file edits needed) ----------
 MORE_EXERCISES = {
     "box_breath": {
         "title": "Box Breathing",
@@ -120,7 +118,7 @@ MORE_EXERCISES = {
     }
 }
 
-# ---------- Gemini  ----------
+# ---------- Gemini (optional) ----------
 api_key = os.getenv("GEMINI_API_KEY")
 client = None
 if api_key:
@@ -185,11 +183,15 @@ SUGGESTION_RULES = [
     {"id":"stroop", "type":"game", "title":"Play a 1-minute Focus game",
      "match_any":[r"\bbored\b", r"\bdistract", r"\bcan.?t focus\b", r"\bprocrastinat"]},
 ]
-def _regex_any(patterns, text): t=text.lower(); return any(re.search(p,t) for p in patterns)
+def _regex_any(patterns, text):
+    t = text.lower()
+    return any(re.search(p, t) for p in patterns)
+
 def choose_suggestion(user_text: str):
     for r in SUGGESTION_RULES:
         if _regex_any(r["match_any"], user_text): return {"source":"rules", **r}
-    if len(user_text.split())>=25: return {"source":"rules","id":"breathing_478","type":"exercise","title":"Try 4-7-8 breathing"}
+    if len(user_text.split()) >= 25:
+        return {"source":"rules","id":"breathing_478","type":"exercise","title":"Try 4-7-8 breathing"}
     return None
 
 # ---------- sidebar ----------
@@ -215,7 +217,8 @@ with st.sidebar:
                 r = client.models.generate_content(model="gemini-2.5-flash-lite", contents=[{"role":"user","parts":[{"text":pr}]}])
                 t = (r.text or "").strip()
                 return t if t else base
-            except: return base
+            except:
+                return base
         return base
     if st.button("📝 Generate recap"):
         txt = build_recap(st.session_state.history, st.session_state.lang)
@@ -247,18 +250,24 @@ with left:
         if user_msg:
             plain = user_msg.strip().lower().rstrip("?.! ")
             if plain in {"aap kaise ho","kaise ho","tum kaise ho"}:
-                if st.session_state.lang=="हिन्दी":   st.session_state.history.append(("assistant","मैं ठीक हूँ — आपका शुक्रिया! आप कैसे हैं?"))
-                elif st.session_state.lang=="Hinglish": st.session_state.history.append(("assistant","Main theek hoon — shukriya! Aap kaise ho?"))
-                else: st.session_state.history.append(("assistant","I’m doing well — thanks for asking! How are you?"))
+                if st.session_state.lang=="हिन्दी":
+                    st.session_state.history.append(("assistant","मैं ठीक हूँ — आपका शुक्रिया! आप कैसे हैं?"))
+                elif st.session_state.lang=="Hinglish":
+                    st.session_state.history.append(("assistant","Main theek hoon — shukriya! Aap kaise ho?"))
+                else:
+                    st.session_state.history.append(("assistant","I’m doing well — thanks for asking! How are you?"))
                 st.rerun()
 
             st.session_state.history.append(("user", user_msg))
 
             risk = classify_risk(user_msg)
             if risk >= 2:
-                st.error("You deserve support. If you’re in danger, please reach out now.\n\n"
-                         f"📞 {HELPLINES['kiran']['name']}: {HELPLINES['kiran']['phone']} • "
-                         f"{HELPLINES['tele_manas']['name']}: {HELPLINES['tele_manas']['phone']}")
+                # === OFFICIAL INDIAN HELPLINES BANNER ===
+                st.error(
+                    "You deserve support. If you’re in danger, please reach out now.\n\n"
+                    f"📞 {HELPLINES['tele_manas']['name']}: {HELPLINES['tele_manas']['phone']} / {HELPLINES['tele_manas'].get('alt','')}\n"
+                    f"📞 {HELPLINES['kiran']['name']}: {HELPLINES['kiran']['phone']}"
+                )
                 st.session_state.pop("suggestion", None)
             elif risk == 1:
                 st.info("Thanks for sharing how heavy this feels. Would you like to tell me what made today hard?")
@@ -376,7 +385,7 @@ with right:
 st.divider()
 st.subheader("🎮 Mind-Ease Games")
 
-# Show persisted game result (for at least 20s)
+# Persisted game result (20s)
 now_ts = time.time()
 if "reaction_result_until" in st.session_state and now_ts < st.session_state.reaction_result_until:
     kind = st.session_state.reaction_result_payload.get("type","info")
@@ -390,7 +399,7 @@ elif "reaction_result_until" in st.session_state and now_ts >= st.session_state.
 
 # State flags to show games after "Play"
 st.session_state.setdefault("show_stroop", False)
-st.session_state.setdefault("show_riddles", False)   # NEW
+st.session_state.setdefault("show_quiz", False)
 
 # --- Game 1: Stroop (description first) ---
 with st.container(border=True):
@@ -420,6 +429,7 @@ with st.container(border=True):
                 if st.session_state.stroop_trial >= TRIALS:
                     dur = time.time()-st.session_state.stroop_start
                     score = st.session_state.stroop_score
+                    # rotating result text
                     if score >= 4:
                         text = f"{pick_new('game_good', GAME_GOOD)} {score}/{TRIALS} in {dur:.1f}s\n\n{pick_new('gq', GAME_QUOTES)}"
                         st.success(text)
@@ -433,117 +443,125 @@ with st.container(border=True):
                         st.warning(text)
                         st.session_state.reaction_result_payload = {"type":"warning","text":text}
                     st.session_state.reaction_result_until = time.time() + 20  # persist 20s
+                    # reset and hide game
                     st.session_state.update({"stroop_trial":0,"stroop_score":0,"stroop_start":None,"stroop_item":None,"show_stroop":False})
                 else:
                     st.session_state.stroop_item = new_item()
                 st.rerun()
 
-# --- Game 2: Brain Teasers (Riddles) ---
+# --- Game 2: Brain Teaser Quiz (5 riddles, with hints) ---
 RIDDLES = [
-    {"q":"What runs but has no legs?", "a":["water","river"], "h":["It flows.","You can drink it or see it in taps."]},
-    {"q":"What has keys but can’t open locks?", "a":["keyboard","piano"], "h":["You type or play on it.","Musical or computer."]},
-    {"q":"What has hands but can’t clap?", "a":["clock"], "h":["It tells time.","It has a face."]},
-    {"q":"I speak without a mouth and hear without ears. What am I?", "a":["echo"], "h":["You hear me in valleys.","I repeat what you say."]},
-    {"q":"What gets wetter the more it dries?", "a":["towel"], "h":["Found in bathrooms.","You use it after a shower."]},
-    {"q":"What has a neck but no head?", "a":["bottle"], "h":["In the fridge.","Holds liquids."]},
-    {"q":"What has a face and two hands but no arms or legs?", "a":["clock","watch"], "h":["Time.","Worn or wall-mounted."]},
-    {"q":"What has one eye but cannot see?", "a":["needle","hurricane","cyclone"], "h":["Tailor’s tool.","Also in a storm."]},
-    {"q":"What belongs to you but others use it more than you?", "a":["name"], "h":["People call it out.","Identity."]},
-    {"q":"What can be cracked, made, told, and played?", "a":["joke"], "h":["Laughter involved.","Comedians love it."]},
-    {"q":"What has many teeth but cannot bite?", "a":["comb","zipper"], "h":["Hair tool.","Also on jackets."]},
-    {"q":"What can you catch but not throw?", "a":["cold"], "h":["Health related.","Sneezes."]},
-    {"q":"What has a head and a tail but no body?", "a":["coin"], "h":["Flip it.","Money."]},
-    {"q":"What can travel around the world while staying in a corner?", "a":["stamp"], "h":["On letters.","Postal."]},
-    {"q":"What room has no doors or windows?", "a":["mushroom"], "h":["It’s a pun.","Edible."]},
-    {"q":"What gets broken without being held?", "a":["promise"], "h":["Trust issue.","Words."]},
-    {"q":"What invention lets you look right through a wall?", "a":["window"], "h":["Transparent.","Glass."]},
-    {"q":"What is full of holes but still holds water?", "a":["sponge"], "h":["Kitchen item.","Absorbs."]},
-    {"q":"What goes up but never comes down?", "a":["age"], "h":["Birthday related.","Numbers."]},
-    {"q":"What has words but never speaks?", "a":["book"], "h":["Library.","Pages."]},
+    {"q":"What is that which can run but has no legs?", "answers":["clock"], "hint":"It has hands and a face but cannot walk."},
+    {"q":"What runs but never walks, has a mouth but never talks?", "answers":["river"], "hint":"It flows to the sea."},
+    {"q":"What has to be broken before you can use it?", "answers":["egg"], "hint":"Found at breakfast."},
+    {"q":"What has hands but can’t clap?", "answers":["clock","a clock"], "hint":"It tells time."},
+    {"q":"I speak without a mouth and hear without ears. What am I?", "answers":["echo"], "hint":"You hear it in valleys."},
+    {"q":"The more of this there is, the less you see. What is it?", "answers":["darkness","the dark"], "hint":"Turn on a light to beat it."},
+    {"q":"What gets wetter the more it dries?", "answers":["towel"], "hint":"Found after a shower."},
+    {"q":"What has many keys but can’t open a lock?", "answers":["piano","keyboard"], "hint":"Makes music."},
+    {"q":"What belongs to you but is used more by others?", "answers":["your name","name"], "hint":"People call you by it."},
+    {"q":"What has a head and a tail but no body?", "answers":["coin","a coin"], "hint":"Flip it to decide."},
+    {"q":"What goes up but never comes down?", "answers":["age"], "hint":"Birthday related."},
+    {"q":"What can you catch but not throw?", "answers":["cold"], "hint":"Happens in winter."},
+    {"q":"What has a neck but no head?", "answers":["bottle"], "hint":"Holds water."},
+    {"q":"What can travel around the world while staying in a corner?", "answers":["stamp","a stamp"], "hint":"On an envelope."},
+    {"q":"I’m tall when I’m young and short when I’m old. What am I?", "answers":["candle"], "hint":"Melted by a flame."},
+    {"q":"What gets bigger the more you take away?", "answers":["hole"], "hint":"Digging makes it larger."},
+    {"q":"What has one eye but cannot see?", "answers":["needle"], "hint":"Useful for stitching."},
+    {"q":"What has words but never speaks?", "answers":["book"], "hint":"You read it."},
+    {"q":"What building has the most stories?", "answers":["library"], "hint":"Quiet place."},
+    {"q":"Forward I am heavy, backward I am not. What am I?", "answers":["ton"], "hint":"It’s a weight; read me in reverse."}
 ]
 
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9 ]+", "", s.strip().lower())
+
 with st.container(border=True):
-    st.markdown("**Brain Teasers (≈2–3 min):** Answer 5 short riddles. Ask for a hint if stuck — it trains flexible thinking and lifts mood.")
-    if not st.session_state.show_riddles:
-        if st.button("Play Riddles"):
-            st.session_state.show_riddles = True
-            st.session_state.riddle_pool = random.sample(RIDDLES, 5)  # pick 5 each time
-            st.session_state.riddle_round = 0
-            st.session_state.riddle_score = 0
-            st.session_state.riddle_hint_step = 0
-            st.session_state.riddle_feedback = ""
+    st.markdown("**Brain Teaser Quiz (≈2–3 min):** 5 quick riddles to spark curiosity. You can use a **Hint** if stuck.")
+    st.session_state.setdefault("show_quiz", False)
+    if not st.session_state.show_quiz:
+        if st.button("Play Riddle Quiz"):
+            st.session_state.show_quiz = True
+            st.session_state.quiz_pool = random.sample(RIDDLES, 5)
+            st.session_state.quiz_idx = 0
+            st.session_state.quiz_score = 0
+            st.session_state.quiz_show_hint = False
+            st.session_state.quiz_feedback = ""
             st.rerun()
     else:
-        r = st.session_state.riddle_pool[st.session_state.riddle_round]
-        st.caption(f"Riddle {st.session_state.riddle_round+1} / 5")
-        st.write("**" + r["q"] + "**")
+        i = st.session_state.quiz_idx
+        q = st.session_state.quiz_pool[i]
+        st.caption(f"Riddle {i+1} of 5")
+        st.write(f"**{q['q']}**")
+        if st.session_state.quiz_show_hint:
+            st.info(f"Hint: {q['hint']}")
 
-        # hint handling
-        cols = st.columns([3,1,1])
-        ans = cols[0].text_input("Your answer", key=f"ans_{st.session_state.riddle_round}")
-        if cols[1].button("Hint"):
-            st.session_state.riddle_hint_step = min(st.session_state.riddle_hint_step + 1, len(r["h"]))
-        if st.session_state.riddle_hint_step > 0:
-            shown = " • ".join(r["h"][:st.session_state.riddle_hint_step])
-            st.info(f"Hints: {shown}")
-
-        # normalize answer
-        def norm(s): return re.sub(r"[^a-z0-9]+","", s.strip().lower())
-
-        # submit / skip
-        sub_col1, sub_col2 = st.columns([1,1])
-        if sub_col1.button("Submit"):
+        ans = st.text_input("Your answer", key=f"quiz_ans_{i}")
+        c1, c2, c3 = st.columns(3)
+        if c1.button("Submit", key=f"quiz_submit_{i}"):
             if ans.strip():
-                if norm(ans) in {norm(x) for x in r["a"]}:
-                    st.session_state.riddle_score += 1
-                    st.session_state.riddle_feedback = "✅ Correct! Nice thinking."
+                user = _norm(ans)
+                ok = any(user == _norm(a) for a in q["answers"])
+                if ok:
+                    st.session_state.quiz_score += 1
+                    st.session_state.quiz_feedback = "✅ Correct!"
                 else:
-                    st.session_state.riddle_feedback = f"❌ Not quite. Answer was **{r['a'][0].title()}**."
-                # next round
-                st.session_state.riddle_round += 1
-                st.session_state.riddle_hint_step = 0
-                if st.session_state.riddle_round >= 5:
-                    # summary + persist for 20s
-                    score = st.session_state.riddle_score
+                    st.session_state.quiz_feedback = f"❌ Not quite. Answer: **{q['answers'][0]}**"
+                # next riddle or finish
+                if i == 4:
+                    score = st.session_state.quiz_score
                     if score >= 4:
-                        text = f"{pick_new('rt_good', GAME_GOOD)} You got **{score}/5**.\n\n{pick_new('rt_q', GAME_QUOTES)}"
+                        text = f"{pick_new('quiz_good', GAME_GOOD)} {score}/5 🎉\n\n{pick_new('quiz_q', GAME_QUOTES)}"
                         st.success(text)
                         st.session_state.reaction_result_payload = {"type":"success","text":text}
                     elif score == 3:
-                        text = f"{pick_new('rt_avg', GAME_AVG)} You got **{score}/5**.\n\n{pick_new('rt_q', GAME_QUOTES)}"
+                        text = f"{pick_new('quiz_avg', GAME_AVG)} {score}/5 🙂\n\n{pick_new('quiz_q', GAME_QUOTES)}"
                         st.info(text)
                         st.session_state.reaction_result_payload = {"type":"info","text":text}
                     else:
-                        text = f"{pick_new('rt_low', GAME_LOW)} You got **{score}/5**.\n\n{pick_new('rt_q', GAME_QUOTES)}"
+                        text = f"{pick_new('quiz_low', GAME_LOW)} {score}/5 💪\n\n{pick_new('quiz_q', GAME_QUOTES)}"
                         st.warning(text)
                         st.session_state.reaction_result_payload = {"type":"warning","text":text}
                     st.session_state.reaction_result_until = time.time() + 20
-                    st.session_state.show_riddles = False
-                st.rerun()
-        if sub_col2.button("Skip"):
-            st.session_state.riddle_feedback = f"⏭️ Skipped. Answer was **{r['a'][0].title()}**."
-            st.session_state.riddle_round += 1
-            st.session_state.riddle_hint_step = 0
-            if st.session_state.riddle_round >= 5:
-                score = st.session_state.riddle_score
+                    # reset quiz
+                    st.session_state.show_quiz = False
+                    st.rerun()
+                else:
+                    st.session_state.quiz_idx += 1
+                    st.session_state.quiz_show_hint = False
+                    st.rerun()
+            else:
+                st.info("Type your best guess or tap **Hint**.")
+        if c2.button("Hint", key=f"quiz_hint_{i}"):
+            st.session_state.quiz_show_hint = True
+            st.rerun()
+        if c3.button("Skip", key=f"quiz_skip_{i}"):
+            # reveal and move on
+            st.info(f"Skipped. Answer: **{q['answers'][0]}**")
+            if i == 4:
+                score = st.session_state.quiz_score
                 if score >= 4:
-                    text = f"{pick_new('rt_good', GAME_GOOD)} You got **{score}/5**.\n\n{pick_new('rt_q', GAME_QUOTES)}"
+                    text = f"{pick_new('quiz_good', GAME_GOOD)} {score}/5 🎉\n\n{pick_new('quiz_q', GAME_QUOTES)}"
                     st.success(text)
                     st.session_state.reaction_result_payload = {"type":"success","text":text}
                 elif score == 3:
-                    text = f"{pick_new('rt_avg', GAME_AVG)} You got **{score}/5**.\n\n{pick_new('rt_q', GAME_QUOTES)}"
+                    text = f"{pick_new('quiz_avg', GAME_AVG)} {score}/5 🙂\n\n{pick_new('quiz_q', GAME_QUOTES)}"
                     st.info(text)
                     st.session_state.reaction_result_payload = {"type":"info","text":text}
                 else:
-                    text = f"{pick_new('rt_low', GAME_LOW)} You got **{score}/5**.\n\n{pick_new('rt_q', GAME_QUOTES)}"
+                    text = f"{pick_new('quiz_low', GAME_LOW)} {score}/5 💪\n\n{pick_new('quiz_q', GAME_QUOTES)}"
                     st.warning(text)
                     st.session_state.reaction_result_payload = {"type":"warning","text":text}
                 st.session_state.reaction_result_until = time.time() + 20
-                st.session_state.show_riddles = False
-            st.rerun()
+                st.session_state.show_quiz = False
+                st.rerun()
+            else:
+                st.session_state.quiz_idx += 1
+                st.session_state.quiz_show_hint = False
+                st.rerun()
 
-        if st.session_state.riddle_feedback:
-            st.caption(st.session_state.riddle_feedback)
+        if st.session_state.quiz_feedback:
+            st.caption(st.session_state.quiz_feedback)
 
 # --- Gratitude Blitz with real ticking countdown ---
 st.markdown("---")
