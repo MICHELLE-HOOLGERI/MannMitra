@@ -27,24 +27,11 @@ h1,h2,h3,h4{ margin-top:.6rem !important; line-height:1.25; font-family: ui-sans
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- keep-scroll-position helpers ----------
-def _set_scroll_anchor(name: str):
-    """Remember which section to snap to after a rerun."""
-    st.session_state["_scroll_to"] = name
-
-def _apply_scroll_if_needed():
-    """If a section was requested, scroll back to it immediately."""
-    anchor = st.session_state.pop("_scroll_to", None)
-    if anchor:
-        st.markdown(
-            f"""
-            <script>
-            const el = document.getElementById("{anchor}");
-            if (el) el.scrollIntoView({{behavior:"instant", block:"start"}});
-            </script>
-            """,
-            unsafe_allow_html=True,
-        )
+# ---------- tiny router ----------
+SECTIONS = ["Chat", "Check-in", "Games", "Gratitude"]
+st.session_state.setdefault("section", "Chat")
+def set_section(name: str):
+    st.session_state["section"] = name
 
 # ---------- helpers ----------
 def load_json_safe(rel_path: str, default: dict):
@@ -175,12 +162,15 @@ def choose_suggestion(user_text: str):
         return {"source":"rules","id":"breathing_478","type":"exercise","title":"Try 4-7-8 breathing"}
     return None
 
-# ---------- sidebar state ----------
+# ---------- sidebar ----------
 st.session_state.setdefault("quick_hide", False)
 st.session_state.setdefault("history", [])
 st.session_state.setdefault("lang", "English")
 
 with st.sidebar:
+    st.markdown("### Navigation")
+    st.session_state.section = st.radio("Go to section", SECTIONS, index=SECTIONS.index(st.session_state.section))
+    st.markdown("---")
     st.markdown("### Privacy & Tools")
     cA, cB = st.columns(2)
     if cA.button("🔒 Quick Hide"): st.session_state.quick_hide = True
@@ -209,14 +199,14 @@ if st.session_state.quick_hide:
     st.markdown("### ✨ Screen hidden. This is your space — take a slow breath. When ready, unhide from the sidebar.")
     st.stop()
 
-# ---------- UI ----------
-left, right = st.columns([3,2])
+# =========================================================
+# =============== SECTION RENDERERS =======================
+# =========================================================
 
-with left:
-    st.markdown("## 💚 MannMitra — Youth Wellness (Prototype)")
+def render_chat():
+    st.markdown("## 💚 MannMitra — Chat")
     st.caption("Anonymous demo • Not medical advice • Data stays local")
 
-    # Chat
     with st.container(border=True):
         st.subheader("Chat")
         st.markdown('<div class="chat-scroll">', unsafe_allow_html=True)
@@ -234,7 +224,7 @@ with left:
                     st.session_state.history.append(("assistant","Main theek hoon — shukriya! Aap kaise ho?"))
                 else:
                     st.session_state.history.append(("assistant","I’m doing well — thanks for asking! How are you?"))
-                st.rerun()
+                st.experimental_rerun()
 
             st.session_state.history.append(("user", user_msg))
             risk = classify_risk(user_msg)
@@ -253,9 +243,8 @@ with left:
 
             bot = gemini_reply(user_msg, st.session_state.lang)
             st.session_state.history.append(("assistant", bot))
-            st.rerun()
+            st.experimental_rerun()
 
-    # Suggestion card
     if st.session_state.get("suggestion"):
         sug = st.session_state["suggestion"]
         with st.container(border=True):
@@ -275,212 +264,193 @@ with left:
                 if st.button("Not now", key="sug_skip_ex"):
                     st.session_state.pop("suggestion", None)
 
-            elif sug["type"] == "game" and sug["id"] == "stroop":
-                st.write("**Play a 1-minute Focus game (Stroop)**")
-                st.caption("Tap the INK color (ignore the word). It helps reset attention.")
-                if st.button("Play now", key="sug_play_stroop"):
-                    st.session_state["show_stroop"] = True
-                    st.session_state.pop("suggestion", None)
-                    _set_scroll_anchor("games")
-                    st.rerun()
-                if st.button("Not now", key="sug_skip_game"):
-                    st.session_state.pop("suggestion", None)
+def render_checkin():
+    st.markdown("## 🧭 Daily Check-in (WHO-5)")
+    left, right = st.columns([1,1])
 
-    # Quick Exercises
-    with st.container(border=True):
-        st.subheader("Quick Exercises")
-        merged = {
-            "breathing_478": {
-                "title": EXERCISES.get("breathing_478", {}).get("title","4-7-8 Breathing"),
-                "when": "Anxious or restless; calm down in <2 min.",
-                "what": "Paced breathing that nudges the body toward calm.",
-                "steps": EXERCISES.get("breathing_478", {}).get("steps", ["Inhale 4s","Hold 7s","Exhale 8s"]),
-                "cycles": EXERCISES.get("breathing_478", {}).get("cycles", 3)
-            },
-            "grounding_54321": {
-                "title": EXERCISES.get("grounding_54321", {}).get("title","5-4-3-2-1 Grounding"),
-                "when": "Overthinking; come back to the present.",
-                "what": "Use your senses to anchor attention safely.",
-                "steps": EXERCISES.get("grounding_54321", {}).get("steps", ["5 see","4 touch","3 hear","2 smell","1 taste"]),
-                "cycles": 1
-            }
-        }
-        merged.update(MORE_EXERCISES)
-        for eid, meta in merged.items():
-            with st.expander(f"🧩 {meta['title']}"):
-                st.caption(f"**When to use:** {meta['when']}")
-                st.caption(f"**What it is:** {meta['what']}")
-                if st.button("Start", key=f"ex_{eid}"):
-                    st.info("Take your time:\n- " + "\n- ".join(meta["steps"]))
-                    st.success(pick_new("cheer_ex2", [
-                        "You showed up for yourself today.",
-                        "Nice — caring for yourself is strength."
-                    ]) + "\n\n" + pick_new("quote_ex2", ["“One breath at a time.”","“Small acts, big change.”"]))
+    with left:
+        with st.container(border=True):
+            st.subheader("How was your day? (WHO-5)")
+            who5_scores = []
+            with st.form("who5_form", clear_on_submit=True):
+                for i, q in enumerate(WHO5["items"]):
+                    who5_scores.append(st.radio(q, options=[0,1,2,3,4,5], horizontal=True, key=f"q{i}"))
+                note = st.text_input("One line about today (optional)")
+                submitted = st.form_submit_button("Save check-in")
+            if submitted:
+                total = sum(who5_scores) * 4   # 0–100
+                row = pd.DataFrame([{"ts": int(time.time()), "score": total, "note": note}])
+                path = APP_DIR / "data/mood_log.csv"
+                if path.exists():
+                    prev = pd.read_csv(path); row = pd.concat([prev, row], ignore_index=True)
+                row.to_csv(path, index=False)
+                st.success(f"Saved! Today’s WHO-5 score: {total}/100")
+                if total < 40:
+                    st.warning(pick_new("cheer_low", CHEER_LOW) + "\n\n" + pick_new("q_low", QUOTE_LOW))
+                elif total < 70:
+                    st.info(pick_new("cheer_ok", CHEER_OK) + "\n\n" + pick_new("q_ok", QUOTE_OK))
+                else:
+                    st.success(pick_new("cheer_high", CHEER_HIGH) + "\n\n" + pick_new("q_high", QUOTE_HIGH))
 
-with right:
-    # WHO-5 Check-in
-    with st.container(border=True):
-        st.subheader("How was your day? (WHO-5)")
-        who5_scores = []
-        with st.form("who5_form", clear_on_submit=True):
-            for i, q in enumerate(WHO5["items"]):
-                who5_scores.append(st.radio(q, options=[0,1,2,3,4,5], horizontal=True, key=f"q{i}"))
-            note = st.text_input("One line about today (optional)")
-            submitted = st.form_submit_button("Save check-in")
-        if submitted:
-            total = sum(who5_scores) * 4   # 0–100
-            row = pd.DataFrame([{"ts": int(time.time()), "score": total, "note": note}])
+    with right:
+        with st.container(border=True):
+            st.subheader("Mood & Happiness")
             path = APP_DIR / "data/mood_log.csv"
             if path.exists():
-                prev = pd.read_csv(path); row = pd.concat([prev, row], ignore_index=True)
-            row.to_csv(path, index=False)
-            st.success(f"Saved! Today’s WHO-5 score: {total}/100")
-            if total < 40:
-                st.warning(pick_new("cheer_low", CHEER_LOW) + "\n\n" + pick_new("q_low", QUOTE_LOW))
-            elif total < 70:
-                st.info(pick_new("cheer_ok", CHEER_OK) + "\n\n" + pick_new("q_ok", QUOTE_OK))
-            else:
-                st.success(pick_new("cheer_high", CHEER_HIGH) + "\n\n" + pick_new("q_high", QUOTE_HIGH))
-
-    # Mood & Happiness — bar if 1 point, line if 2+
-    with st.container(border=True):
-        st.subheader("Mood & Happiness")
-        path = APP_DIR / "data/mood_log.csv"
-        if path.exists():
-            df = pd.read_csv(path)
-            df["date"] = pd.to_datetime(df["ts"], unit="s").dt.date
-            daily = df.groupby("date")["score"].mean().tail(14)
-            daily.index.name = "Date"
-            if len(daily) == 1:
-                st.caption("One entry so far — showing a bar. Add another day to see a line.")
-                st.bar_chart(daily, height=220)
-            else:
-                st.line_chart(daily, height=220)
-            today = dt.date.today()
-            past7 = {today - dt.timedelta(days=i) for i in range(7)}
-            wdf = daily[daily.index.isin(past7)]
-            happy_days = int((wdf >= 60).sum())
-            st.metric("Happy days this week", f"{happy_days}/7")
-        else:
-            st.info("No check-ins yet. Submit WHO-5 above to see your graphs.")
-
-# ---------- Games ----------
-st.divider()
-
-# anchor BEFORE the header so scrolling lands nicely
-st.markdown('<span id="games"></span>', unsafe_allow_html=True)
-_apply_scroll_if_needed()
-
-st.subheader("🎮 Mind-Ease Games")
-
-now_ts = time.time()
-if "reaction_result_until" in st.session_state and now_ts < st.session_state.reaction_result_until:
-    kind = st.session_state.reaction_result_payload.get("type","info")
-    text = st.session_state.reaction_result_payload.get("text","")
-    (st.success if kind=="success" else st.warning if kind=="warning" else st.info)(text)
-elif "reaction_result_until" in st.session_state and now_ts >= st.session_state.reaction_result_until:
-    st.session_state.pop("reaction_result_until", None)
-    st.session_state.pop("reaction_result_payload", None)
-
-st.session_state.setdefault("show_stroop", False)
-st.session_state.setdefault("show_quiz", False)
-
-# --- Game 1: Stroop ---
-with st.container(border=True):
-    st.markdown("**Color–Word Stroop (≈1 min):** Helps attention control and reduces rumination by refocusing on a simple rule.")
-    if not st.session_state.show_stroop:
-        if st.button("Play Stroop"):
-            st.session_state.show_stroop = True
-            _set_scroll_anchor("games")
-            st.rerun()
-    else:
-        COLORS = ["RED","BLUE","GREEN","YELLOW","PURPLE","ORANGE"]
-        for k,v in {"stroop_trial":0,"stroop_score":0,"stroop_start":None,"stroop_item":None}.items():
-            st.session_state.setdefault(k,v)
-        def new_item():
-            return random.choice(COLORS), random.choice(COLORS)
-        if st.session_state.stroop_item is None: st.session_state.stroop_item = new_item()
-        TRIALS = 5
-        trial = st.session_state.stroop_trial
-        word, ink = st.session_state.stroop_item
-        if trial==0 and st.session_state.stroop_start is None: st.session_state.stroop_start = time.time()
-        st.caption("Tap the **INK COLOR** (ignore the word). 5 rounds.")
-        st.markdown(f"<h1 style='color:{ink.lower()};margin-top:0'>{word}</h1>", unsafe_allow_html=True)
-        cols = st.columns(len(COLORS))
-        for i,c in enumerate(COLORS):
-            if cols[i].button(c):
-                st.session_state.stroop_trial += 1
-                if c==ink: st.session_state.stroop_score += 1
-                if st.session_state.stroop_trial >= TRIALS:
-                    dur = time.time()-st.session_state.stroop_start
-                    score = st.session_state.stroop_score
-                    if score >= 4:
-                        text = f"{pick_new('game_good', GAME_GOOD)} {score}/{TRIALS} in {dur:.1f}s\n\n{pick_new('gq', GAME_QUOTES)}"
-                        st.success(text); st.session_state.reaction_result_payload={"type":"success","text":text}
-                    elif score == 3:
-                        text = f"{pick_new('game_avg', GAME_AVG)} {score}/{TRIALS}\n\n{pick_new('gq', GAME_QUOTES)}"
-                        st.info(text); st.session_state.reaction_result_payload={"type":"info","text":text}
-                    else:
-                        text = f"{pick_new('game_low', GAME_LOW)} {score}/{TRIALS}\n\n{pick_new('gq', GAME_QUOTES)}"
-                        st.warning(text); st.session_state.reaction_result_payload={"type":"warning","text":text}
-                    st.session_state.reaction_result_until = time.time() + 20
-                    st.session_state.update({"stroop_trial":0,"stroop_score":0,"stroop_start":None,"stroop_item":None,"show_stroop":False})
-                    _set_scroll_anchor("games")
-                    st.rerun()
+                df = pd.read_csv(path)
+                df["date"] = pd.to_datetime(df["ts"], unit="s").dt.date
+                daily = df.groupby("date")["score"].mean().tail(14)
+                daily.index.name = "Date"
+                if len(daily) == 1:
+                    st.caption("One entry so far — showing a bar. Add another day to see a line.")
+                    st.bar_chart(daily, height=220)
                 else:
-                    st.session_state.stroop_item = new_item()
-                    _set_scroll_anchor("games")
-                    st.rerun()
+                    st.line_chart(daily, height=220)
+                today = dt.date.today()
+                past7 = {today - dt.timedelta(days=i) for i in range(7)}
+                wdf = daily[daily.index.isin(past7)]
+                happy_days = int((wdf >= 60).sum())
+                st.metric("Happy days this week", f"{happy_days}/7")
+            else:
+                st.info("No check-ins yet. Submit WHO-5 above to see your graphs.")
 
-# --- Game 2: Brain Teaser Quiz ---
-RIDDLES = [
-    {"q":"What is that which can run but has no legs?","answers":["clock"],"hint":"It has hands and a face but cannot walk."},
-    {"q":"What runs but never walks, has a mouth but never talks?","answers":["river"],"hint":"It flows to the sea."},
-    {"q":"What has to be broken before you can use it?","answers":["egg"],"hint":"Found at breakfast."},
-    {"q":"What has hands but can’t clap?","answers":["clock","a clock"],"hint":"It tells time."},
-    {"q":"I speak without a mouth and hear without ears. What am I?","answers":["echo"],"hint":"You hear it in valleys."},
-    {"q":"The more of this there is, the less you see. What is it?","answers":["darkness","the dark"],"hint":"Turn on a light to beat it."},
-    {"q":"What gets wetter the more it dries?","answers":["towel"],"hint":"Found after a shower."},
-    {"q":"What has many keys but can’t open a lock?","answers":["piano","keyboard"],"hint":"Makes music."},
-    {"q":"What belongs to you but is used more by others?","answers":["your name","name"],"hint":"People call you by it."},
-    {"q":"What has a head and a tail but no body?","answers":["coin","a coin"],"hint":"Flip it to decide."},
-    {"q":"What goes up but never comes down?","answers":["age"],"hint":"Birthday related."},
-    {"q":"What can you catch but not throw?","answers":["cold"],"hint":"Happens in winter."},
-    {"q":"What has a neck but no head?","answers":["bottle"],"hint":"Holds water."},
-    {"q":"What can travel around the world while staying in a corner?","answers":["stamp","a stamp"],"hint":"On an envelope."},
-    {"q":"I’m tall when I’m young and short when I’m old. What am I?","answers":["candle"],"hint":"Melted by a flame."},
-    {"q":"What gets bigger the more you take away?","answers":["hole"],"hint":"Digging makes it larger."},
-    {"q":"What has one eye but cannot see?","answers":["needle"],"hint":"Useful for stitching."},
-    {"q":"What has words but never speaks?","answers":["book"],"hint":"You read it."},
-    {"q":"What building has the most stories?","answers":["library"],"hint":"Quiet place."},
-    {"q":"Forward I am heavy, backward I am not. What am I?","answers":["ton"],"hint":"It’s a weight; read me in reverse."}
-]
-def _norm(s:str)->str: return re.sub(r"[^a-z0-9 ]+","",s.strip().lower())
+def render_games():
+    st.markdown("## 🎮 Mind-Ease Games")
 
-with st.container(border=True):
-    st.markdown("**Brain Teaser Quiz (≈2–3 min):** 5 quick riddles to spark curiosity. You can use a **Hint** if stuck.")
-    if not st.session_state.show_quiz:
-        if st.button("Play Riddle Quiz"):
-            st.session_state.show_quiz=True
-            st.session_state.quiz_pool=random.sample(RIDDLES,5)
-            st.session_state.quiz_idx=0
-            st.session_state.quiz_score=0
-            st.session_state.quiz_show_hint=False
-            st.session_state.quiz_feedback=""
-            _set_scroll_anchor("games")
-            st.rerun()
-    else:
-        i = st.session_state.quiz_idx
-        q = st.session_state.quiz_pool[i]
-        st.caption(f"Riddle {i+1} of 5"); st.write(f"**{q['q']}**")
-        if st.session_state.quiz_show_hint: st.info(f"Hint: {q['hint']}")
-        ans = st.text_input("Your answer", key=f"quiz_ans_{i}")
-        c1,c2,c3 = st.columns(3)
-        if c1.button("Submit", key=f"quiz_submit_{i}"):
-            if ans.strip():
-                ok = any(_norm(ans)==_norm(a) for a in q["answers"])
-                if ok: st.session_state.quiz_score += 1; st.session_state.quiz_feedback="✅ Correct!"
-                else:  st.session_state.quiz_feedback=f"❌ Not quite. Answer: **{q['answers'][0]}**"
+    # show last result if present
+    now_ts = time.time()
+    if "reaction_result_until" in st.session_state and now_ts < st.session_state.reaction_result_until:
+        kind = st.session_state.reaction_result_payload.get("type","info")
+        text = st.session_state.reaction_result_payload.get("text","")
+        (st.success if kind=="success" else st.warning if kind=="warning" else st.info)(text)
+    elif "reaction_result_until" in st.session_state and now_ts >= st.session_state.reaction_result_until:
+        st.session_state.pop("reaction_result_until", None)
+        st.session_state.pop("reaction_result_payload", None)
+
+    st.session_state.setdefault("show_stroop", False)
+    st.session_state.setdefault("show_quiz", False)
+
+    # --- Game 1: Stroop ---
+    with st.container(border=True):
+        st.markdown("**Color–Word Stroop (≈1 min):** Helps attention control and reduces rumination by refocusing on a simple rule.")
+        if not st.session_state.show_stroop:
+            if st.button("Play Stroop"):
+                st.session_state.show_stroop = True
+                set_section("Games")
+                st.experimental_rerun()
+        else:
+            COLORS = ["RED","BLUE","GREEN","YELLOW","PURPLE","ORANGE"]
+            for k,v in {"stroop_trial":0,"stroop_score":0,"stroop_start":None,"stroop_item":None}.items():
+                st.session_state.setdefault(k,v)
+            def new_item():
+                return random.choice(COLORS), random.choice(COLORS)
+            if st.session_state.stroop_item is None: st.session_state.stroop_item = new_item()
+            TRIALS = 5
+            trial = st.session_state.stroop_trial
+            word, ink = st.session_state.stroop_item
+            if trial==0 and st.session_state.stroop_start is None: st.session_state.stroop_start = time.time()
+            st.caption("Tap the **INK COLOR** (ignore the word). 5 rounds.")
+            st.markdown(f"<h1 style='color:{ink.lower()};margin-top:0'>{word}</h1>", unsafe_allow_html=True)
+            cols = st.columns(len(COLORS))
+            for i,c in enumerate(COLORS):
+                if cols[i].button(c):
+                    st.session_state.stroop_trial += 1
+                    if c==ink: st.session_state.stroop_score += 1
+                    if st.session_state.stroop_trial >= TRIALS:
+                        dur = time.time()-st.session_state.stroop_start
+                        score = st.session_state.stroop_score
+                        if score >= 4:
+                            text = f"{pick_new('game_good', GAME_GOOD)} {score}/{TRIALS} in {dur:.1f}s\n\n{pick_new('gq', GAME_QUOTES)}"
+                            st.success(text); st.session_state.reaction_result_payload={"type":"success","text":text}
+                        elif score == 3:
+                            text = f"{pick_new('game_avg', GAME_AVG)} {score}/{TRIALS}\n\n{pick_new('gq', GAME_QUOTES)}"
+                            st.info(text); st.session_state.reaction_result_payload={"type":"info","text":text}
+                        else:
+                            text = f"{pick_new('game_low', GAME_LOW)} {score}/{TRIALS}\n\n{pick_new('gq', GAME_QUOTES)}"
+                            st.warning(text); st.session_state.reaction_result_payload={"type":"warning","text":text}
+                        st.session_state.reaction_result_until = time.time() + 20
+                        st.session_state.update({"stroop_trial":0,"stroop_score":0,"stroop_start":None,"stroop_item":None,"show_stroop":False})
+                        set_section("Games")
+                        st.experimental_rerun()
+                    else:
+                        st.session_state.stroop_item = new_item()
+                        set_section("Games")
+                        st.experimental_rerun()
+
+    # --- Game 2: Brain Teaser Quiz ---
+    RIDDLES = [
+        {"q":"What is that which can run but has no legs?","answers":["clock"],"hint":"It has hands and a face but cannot walk."},
+        {"q":"What runs but never walks, has a mouth but never talks?","answers":["river"],"hint":"It flows to the sea."},
+        {"q":"What has to be broken before you can use it?","answers":["egg"],"hint":"Found at breakfast."},
+        {"q":"What has hands but can’t clap?","answers":["clock","a clock"],"hint":"It tells time."},
+        {"q":"I speak without a mouth and hear without ears. What am I?","answers":["echo"],"hint":"You hear it in valleys."},
+        {"q":"The more of this there is, the less you see. What is it?","answers":["darkness","the dark"],"hint":"Turn on a light to beat it."},
+        {"q":"What gets wetter the more it dries?","answers":["towel"],"hint":"Found after a shower."},
+        {"q":"What has many keys but can’t open a lock?","answers":["piano","keyboard"],"hint":"Makes music."},
+        {"q":"What belongs to you but is used more by others?","answers":["your name","name"],"hint":"People call you by it."},
+        {"q":"What has a head and a tail but no body?","answers":["coin","a coin"],"hint":"Flip it to decide."},
+        {"q":"What goes up but never comes down?","answers":["age"],"hint":"Birthday related."},
+        {"q":"What can you catch but not throw?","answers":["cold"],"hint":"Happens in winter."},
+        {"q":"What has a neck but no head?","answers":["bottle"],"hint":"Holds water."},
+        {"q":"What can travel around the world while staying in a corner?","answers":["stamp","a stamp"],"hint":"On an envelope."},
+        {"q":"I’m tall when I’m young and short when I’m old. What am I?","answers":["candle"],"hint":"Melted by a flame."},
+        {"q":"What gets bigger the more you take away?","answers":["hole"],"hint":"Digging makes it larger."},
+        {"q":"What has one eye but cannot see?","answers":["needle"],"hint":"Useful for stitching."},
+        {"q":"What has words but never speaks?","answers":["book"],"hint":"You read it."},
+        {"q":"What building has the most stories?","answers":["library"],"hint":"Quiet place."},
+        {"q":"Forward I am heavy, backward I am not. What am I?","answers":["ton"],"hint":"It’s a weight; read me in reverse."}
+    ]
+    def _norm(s:str)->str: return re.sub(r"[^a-z0-9 ]+","",s.strip().lower())
+
+    with st.container(border=True):
+        st.markdown("**Brain Teaser Quiz (≈2–3 min):** 5 quick riddles to spark curiosity. You can use a **Hint** if stuck.")
+        if not st.session_state.show_quiz:
+            if st.button("Play Riddle Quiz"):
+                st.session_state.show_quiz=True
+                st.session_state.quiz_pool=random.sample(RIDDLES,5)
+                st.session_state.quiz_idx=0
+                st.session_state.quiz_score=0
+                st.session_state.quiz_show_hint=False
+                st.session_state.quiz_feedback=""
+                set_section("Games")
+                st.experimental_rerun()
+        else:
+            i = st.session_state.quiz_idx
+            q = st.session_state.quiz_pool[i]
+            st.caption(f"Riddle {i+1} of 5"); st.write(f"**{q['q']}**")
+            if st.session_state.quiz_show_hint: st.info(f"Hint: {q['hint']}")
+            ans = st.text_input("Your answer", key=f"quiz_ans_{i}")
+            c1,c2,c3 = st.columns(3)
+            if c1.button("Submit", key=f"quiz_submit_{i}"):
+                if ans.strip():
+                    ok = any(_norm(ans)==_norm(a) for a in q["answers"])
+                    if ok: st.session_state.quiz_score += 1; st.session_state.quiz_feedback="✅ Correct!"
+                    else:  st.session_state.quiz_feedback=f"❌ Not quite. Answer: **{q['answers'][0]}**"
+                    if i==4:
+                        score = st.session_state.quiz_score
+                        if score>=4:
+                            text=f"{pick_new('quiz_good', GAME_GOOD)} {score}/5 🎉\n\n{pick_new('quiz_q', GAME_QUOTES)}"; st.success(text); st.session_state.reaction_result_payload={"type":"success","text":text}
+                        elif score==3:
+                            text=f"{pick_new('quiz_avg', GAME_AVG)} {score}/5 🙂\n\n{pick_new('quiz_q', GAME_QUOTES)}"; st.info(text); st.session_state.reaction_result_payload={"type":"info","text":text}
+                        else:
+                            text=f"{pick_new('quiz_low', GAME_LOW)} {score}/5 💪\n\n{pick_new('quiz_q', GAME_QUOTES)}"; st.warning(text); st.session_state.reaction_result_payload={"type":"warning","text":text}
+                        st.session_state.reaction_result_until=time.time()+20
+                        st.session_state.show_quiz=False
+                        set_section("Games")
+                        st.experimental_rerun()
+                    else:
+                        st.session_state.quiz_idx += 1
+                        st.session_state.quiz_show_hint=False
+                        set_section("Games")
+                        st.experimental_rerun()
+                else:
+                    st.info("Type your best guess or tap **Hint**.")
+            if c2.button("Hint", key=f"quiz_hint_{i}"):
+                st.session_state.quiz_show_hint=True
+                set_section("Games")
+                st.experimental_rerun()
+            if c3.button("Skip", key=f"quiz_skip_{i}"):
+                st.info(f"Skipped. Answer: **{q['answers'][0]}**")
                 if i==4:
                     score = st.session_state.quiz_score
                     if score>=4:
@@ -491,79 +461,67 @@ with st.container(border=True):
                         text=f"{pick_new('quiz_low', GAME_LOW)} {score}/5 💪\n\n{pick_new('quiz_q', GAME_QUOTES)}"; st.warning(text); st.session_state.reaction_result_payload={"type":"warning","text":text}
                     st.session_state.reaction_result_until=time.time()+20
                     st.session_state.show_quiz=False
-                    _set_scroll_anchor("games")
-                    st.rerun()
+                    set_section("Games")
+                    st.experimental_rerun()
                 else:
                     st.session_state.quiz_idx += 1
                     st.session_state.quiz_show_hint=False
-                    _set_scroll_anchor("games")
-                    st.rerun()
-            else:
-                st.info("Type your best guess or tap **Hint**.")
-        if c2.button("Hint", key=f"quiz_hint_{i}"):
-            st.session_state.quiz_show_hint=True
-            _set_scroll_anchor("games")
-            st.rerun()
-        if c3.button("Skip", key=f"quiz_skip_{i}"):
-            st.info(f"Skipped. Answer: **{q['answers'][0]}**")
-            if i==4:
-                score = st.session_state.quiz_score
-                if score>=4:
-                    text=f"{pick_new('quiz_good', GAME_GOOD)} {score}/5 🎉\n\n{pick_new('quiz_q', GAME_QUOTES)}"; st.success(text); st.session_state.reaction_result_payload={"type":"success","text":text}
-                elif score==3:
-                    text=f"{pick_new('quiz_avg', GAME_AVG)} {score}/5 🙂\n\n{pick_new('quiz_q', GAME_QUOTES)}"; st.info(text); st.session_state.reaction_result_payload={"type":"info","text":text}
-                else:
-                    text=f"{pick_new('quiz_low', GAME_LOW)} {score}/5 💪\n\n{pick_new('quiz_q', GAME_QUOTES)}"; st.warning(text); st.session_state.reaction_result_payload={"type":"warning","text":text}
-                st.session_state.reaction_result_until=time.time()+20
-                st.session_state.show_quiz=False
-                _set_scroll_anchor("games")
-                st.rerun()
-            else:
-                st.session_state.quiz_idx += 1
-                st.session_state.quiz_show_hint=False
-                _set_scroll_anchor("games")
-                st.rerun()
-        if st.session_state.get("quiz_feedback"): st.caption(st.session_state.quiz_feedback)
+                    set_section("Games")
+                    st.experimental_rerun()
+            if st.session_state.get("quiz_feedback"): st.caption(st.session_state.quiz_feedback)
 
-# --- Gratitude Blitz (non-blocking; inputs visible) ---
-st.markdown("---")
-st.markdown('<span id="gratitude"></span>', unsafe_allow_html=True)
-st.markdown("**Gratitude Blitz (60s):** Write 3 small good things. This lifts mood and balances negativity bias.")
-st.session_state.setdefault("grat_start_ts", None)
-c1,c2 = st.columns(2)
-if c1.button("Start 60-sec timer"):
-    st.session_state.grat_start_ts = time.time()
-    _set_scroll_anchor("gratitude")
-    st.rerun()
-if c2.button("Reset"):
-    st.session_state.grat_start_ts = None
-    _set_scroll_anchor("gratitude")
-    st.rerun()
+def render_gratitude():
+    st.markdown("## 🌟 Gratitude Blitz (60s)")
+    st.write("Write 3 small good things. This lifts mood and balances negativity bias.")
+    st.session_state.setdefault("grat_start_ts", None)
+    c1,c2 = st.columns(2)
+    if c1.button("Start 60-sec timer"):
+        st.session_state.grat_start_ts = time.time()
+        set_section("Gratitude")
+        st.experimental_rerun()
+    if c2.button("Reset"):
+        st.session_state.grat_start_ts = None
+        set_section("Gratitude")
+        st.experimental_rerun()
 
-remain_ph = st.empty()
-def _remaining():
-    if st.session_state.grat_start_ts is None: return None
-    return int(max(0, 60 - (time.time() - st.session_state.grat_start_ts)))
+    remain_ph = st.empty()
+    def _remaining():
+        if st.session_state.grat_start_ts is None: return None
+        return int(max(0, 60 - (time.time() - st.session_state.grat_start_ts)))
 
-remain = _remaining()
-if remain is not None and remain > 0:
-    remain_ph.info(f"Time left: {remain}s")
-elif remain == 0:
-    remain_ph.success("Time’s up! Save your 3 notes below. 🌟")
-    st.session_state.grat_start_ts = None
-else:
-    remain_ph.info("Ready when you are — press Start to begin a 60-sec blitz.")
+    remain = _remaining()
+    if remain is not None and remain > 0:
+        remain_ph.info(f"Time left: {remain}s")
+    elif remain == 0:
+        remain_ph.success("Time’s up! Save your 3 notes below. 🌟")
+        st.session_state.grat_start_ts = None
+    else:
+        remain_ph.info("Ready when you are — press Start to begin a 60-sec blitz.")
 
-with st.form("gratitude", clear_on_submit=True):
-    g1 = st.text_input("1) A tiny win")
-    g2 = st.text_input("2) Something you appreciate")
-    g3 = st.text_input("3) One kind thing you can do")
-    if st.form_submit_button("Save"):
-        st.success(pick_new("grat_msg", ["Nice! Noted for today 🌟","Beautiful — gratitude shifts the spotlight to the good."])
-                   + "\n\n" + pick_new("grat_quote", ["“Where attention goes, emotion flows.”","“What we appreciate, appreciates.”"]))
+    with st.form("gratitude", clear_on_submit=True):
+        g1 = st.text_input("1) A tiny win")
+        g2 = st.text_input("2) Something you appreciate")
+        g3 = st.text_input("3) One kind thing you can do")
+        if st.form_submit_button("Save"):
+            st.success(pick_new("grat_msg", ["Nice! Noted for today 🌟","Beautiful — gratitude shifts the spotlight to the good."])
+                       + "\n\n" + pick_new("grat_quote", ["“Where attention goes, emotion flows.”","“What we appreciate, appreciates.”"]))
 
-# Keep the gratitude section in view while the countdown ticks
-if _remaining() not in (None, 0):
-    _set_scroll_anchor("gratitude")
-    time.sleep(1)
-    st.rerun()
+    # keep this section active while the countdown ticks
+    if _remaining() not in (None, 0):
+        set_section("Gratitude")
+        time.sleep(1)
+        st.experimental_rerun()
+
+# =========================================================
+# =============== RENDER ACTIVE SECTION ===================
+# =========================================================
+
+if st.session_state.section == "Chat":
+    render_chat()
+elif st.session_state.section == "Check-in":
+    render_checkin()
+elif st.session_state.section == "Games":
+    render_games()
+elif st.session_state.section == "Gratitude":
+    render_gratitude()
+
