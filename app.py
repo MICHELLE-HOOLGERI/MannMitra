@@ -27,6 +27,25 @@ h1,h2,h3,h4{ margin-top:.6rem !important; line-height:1.25; font-family: ui-sans
 </style>
 """, unsafe_allow_html=True)
 
+# ---------- keep-scroll-position helpers ----------
+def _set_scroll_anchor(name: str):
+    """Remember which section to snap to after a rerun."""
+    st.session_state["_scroll_to"] = name
+
+def _apply_scroll_if_needed():
+    """If a section was requested, scroll back to it immediately."""
+    anchor = st.session_state.pop("_scroll_to", None)
+    if anchor:
+        st.markdown(
+            f"""
+            <script>
+            const el = document.getElementById("{anchor}");
+            if (el) el.scrollIntoView({{behavior:"instant", block:"start"}});
+            </script>
+            """,
+            unsafe_allow_html=True,
+        )
+
 # ---------- helpers ----------
 def load_json_safe(rel_path: str, default: dict):
     p = APP_DIR / rel_path
@@ -262,6 +281,7 @@ with left:
                 if st.button("Play now", key="sug_play_stroop"):
                     st.session_state["show_stroop"] = True
                     st.session_state.pop("suggestion", None)
+                    _set_scroll_anchor("games")
                     st.rerun()
                 if st.button("Not now", key="sug_skip_game"):
                     st.session_state.pop("suggestion", None)
@@ -346,6 +366,11 @@ with right:
 
 # ---------- Games ----------
 st.divider()
+
+# anchor BEFORE the header so scrolling lands nicely
+st.markdown('<span id="games"></span>', unsafe_allow_html=True)
+_apply_scroll_if_needed()
+
 st.subheader("🎮 Mind-Ease Games")
 
 now_ts = time.time()
@@ -366,6 +391,7 @@ with st.container(border=True):
     if not st.session_state.show_stroop:
         if st.button("Play Stroop"):
             st.session_state.show_stroop = True
+            _set_scroll_anchor("games")
             st.rerun()
     else:
         COLORS = ["RED","BLUE","GREEN","YELLOW","PURPLE","ORANGE"]
@@ -399,11 +425,14 @@ with st.container(border=True):
                         st.warning(text); st.session_state.reaction_result_payload={"type":"warning","text":text}
                     st.session_state.reaction_result_until = time.time() + 20
                     st.session_state.update({"stroop_trial":0,"stroop_score":0,"stroop_start":None,"stroop_item":None,"show_stroop":False})
+                    _set_scroll_anchor("games")
+                    st.rerun()
                 else:
                     st.session_state.stroop_item = new_item()
-                st.rerun()
+                    _set_scroll_anchor("games")
+                    st.rerun()
 
-# --- Game 2: Brain Teaser Quiz (same as before) ---
+# --- Game 2: Brain Teaser Quiz ---
 RIDDLES = [
     {"q":"What is that which can run but has no legs?","answers":["clock"],"hint":"It has hands and a face but cannot walk."},
     {"q":"What runs but never walks, has a mouth but never talks?","answers":["river"],"hint":"It flows to the sea."},
@@ -430,7 +459,6 @@ def _norm(s:str)->str: return re.sub(r"[^a-z0-9 ]+","",s.strip().lower())
 
 with st.container(border=True):
     st.markdown("**Brain Teaser Quiz (≈2–3 min):** 5 quick riddles to spark curiosity. You can use a **Hint** if stuck.")
-    st.session_state.setdefault("show_quiz", False)
     if not st.session_state.show_quiz:
         if st.button("Play Riddle Quiz"):
             st.session_state.show_quiz=True
@@ -439,6 +467,7 @@ with st.container(border=True):
             st.session_state.quiz_score=0
             st.session_state.quiz_show_hint=False
             st.session_state.quiz_feedback=""
+            _set_scroll_anchor("games")
             st.rerun()
     else:
         i = st.session_state.quiz_idx
@@ -461,13 +490,20 @@ with st.container(border=True):
                     else:
                         text=f"{pick_new('quiz_low', GAME_LOW)} {score}/5 💪\n\n{pick_new('quiz_q', GAME_QUOTES)}"; st.warning(text); st.session_state.reaction_result_payload={"type":"warning","text":text}
                     st.session_state.reaction_result_until=time.time()+20
-                    st.session_state.show_quiz=False; st.rerun()
+                    st.session_state.show_quiz=False
+                    _set_scroll_anchor("games")
+                    st.rerun()
                 else:
-                    st.session_state.quiz_idx += 1; st.session_state.quiz_show_hint=False; st.rerun()
+                    st.session_state.quiz_idx += 1
+                    st.session_state.quiz_show_hint=False
+                    _set_scroll_anchor("games")
+                    st.rerun()
             else:
                 st.info("Type your best guess or tap **Hint**.")
         if c2.button("Hint", key=f"quiz_hint_{i}"):
-            st.session_state.quiz_show_hint=True; st.rerun()
+            st.session_state.quiz_show_hint=True
+            _set_scroll_anchor("games")
+            st.rerun()
         if c3.button("Skip", key=f"quiz_skip_{i}"):
             st.info(f"Skipped. Answer: **{q['answers'][0]}**")
             if i==4:
@@ -479,18 +515,30 @@ with st.container(border=True):
                 else:
                     text=f"{pick_new('quiz_low', GAME_LOW)} {score}/5 💪\n\n{pick_new('quiz_q', GAME_QUOTES)}"; st.warning(text); st.session_state.reaction_result_payload={"type":"warning","text":text}
                 st.session_state.reaction_result_until=time.time()+20
-                st.session_state.show_quiz=False; st.rerun()
+                st.session_state.show_quiz=False
+                _set_scroll_anchor("games")
+                st.rerun()
             else:
-                st.session_state.quiz_idx += 1; st.session_state.quiz_show_hint=False; st.rerun()
-        if st.session_state.quiz_feedback: st.caption(st.session_state.quiz_feedback)
+                st.session_state.quiz_idx += 1
+                st.session_state.quiz_show_hint=False
+                _set_scroll_anchor("games")
+                st.rerun()
+        if st.session_state.get("quiz_feedback"): st.caption(st.session_state.quiz_feedback)
 
 # --- Gratitude Blitz (non-blocking; inputs visible) ---
 st.markdown("---")
+st.markdown('<span id="gratitude"></span>', unsafe_allow_html=True)
 st.markdown("**Gratitude Blitz (60s):** Write 3 small good things. This lifts mood and balances negativity bias.")
 st.session_state.setdefault("grat_start_ts", None)
 c1,c2 = st.columns(2)
-if c1.button("Start 60-sec timer"): st.session_state.grat_start_ts = time.time()
-if c2.button("Reset"): st.session_state.grat_start_ts = None
+if c1.button("Start 60-sec timer"):
+    st.session_state.grat_start_ts = time.time()
+    _set_scroll_anchor("gratitude")
+    st.rerun()
+if c2.button("Reset"):
+    st.session_state.grat_start_ts = None
+    _set_scroll_anchor("gratitude")
+    st.rerun()
 
 remain_ph = st.empty()
 def _remaining():
@@ -501,7 +549,8 @@ remain = _remaining()
 if remain is not None and remain > 0:
     remain_ph.info(f"Time left: {remain}s")
 elif remain == 0:
-    remain_ph.success("Time’s up! Save your 3 notes below. 🌟"); st.session_state.grat_start_ts = None
+    remain_ph.success("Time’s up! Save your 3 notes below. 🌟")
+    st.session_state.grat_start_ts = None
 else:
     remain_ph.info("Ready when you are — press Start to begin a 60-sec blitz.")
 
@@ -513,6 +562,8 @@ with st.form("gratitude", clear_on_submit=True):
         st.success(pick_new("grat_msg", ["Nice! Noted for today 🌟","Beautiful — gratitude shifts the spotlight to the good."])
                    + "\n\n" + pick_new("grat_quote", ["“Where attention goes, emotion flows.”","“What we appreciate, appreciates.”"]))
 
+# Keep the gratitude section in view while the countdown ticks
 if _remaining() not in (None, 0):
-    time.sleep(1); st.rerun()
-
+    _set_scroll_anchor("gratitude")
+    time.sleep(1)
+    st.rerun()
